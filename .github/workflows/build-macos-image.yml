@@ -36,7 +36,7 @@ on:
 jobs:
   build-macos-image:
     if: ${{ inputs.macos_version != '' && inputs.image_format != '' }}
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     timeout-minutes: 80
 
     steps:
