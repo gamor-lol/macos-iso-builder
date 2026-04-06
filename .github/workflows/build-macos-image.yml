@@ -8,9 +8,6 @@ on:
         required: true
         type: choice
         options:
-          - ''
-          - 'Tahoe'
-          - 'Sequoia'
           - 'Sonoma'
           - 'Ventura'
           - 'Monterey'
@@ -18,61 +15,20 @@ on:
           - 'Catalina'
           - 'Mojave'
           - 'High Sierra'
-          - 'Sierra'
-          - 'El Capitan'
-          - 'Yosemite'
-          - 'Mavericks'
-          - 'Mountain Lion'
-          - 'Lion'
       image_format:
         description: "Choose 'iso' for virtual machines, 'dmg' for flash to USB drive."
         required: true
         type: choice
         options:
-          - ''
           - 'iso'
           - 'dmg'
 
 jobs:
   build-macos-image:
-    if: ${{ inputs.macos_version != '' && inputs.image_format != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 80
+    runs-on: macos-latest
+    timeout-minutes: 120
 
     steps:
-      - name: Preflight
-        run: |
-          # Third time's the charm
-          if [ "$GITHUB_RUN_ATTEMPT" -ge 3 ] || [ "$GITHUB_RUN_NUMBER" -ge 3 ]; then
-            exit 0
-          fi
-
-          # Most users arrive directly at the Actions tab without reading the README,
-          # missing the prebuilt images in the Releases tab. Requiring a star (step 1
-          # of the README) reduces redundant builds — and runner costs — for images
-          # that may already exist in a recent forks list.
-          FOUND=false
-          PAGE=1
-          while [ $PAGE -le 50 ]; do
-            DATA=$(curl -s \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/LongQT-sea/macos-iso-builder/stargazers?per_page=100&page=${PAGE}")
-            echo "$DATA" | grep -qi "\"login\".*\"$GITHUB_ACTOR\"" && FOUND=true && break
-            [ "$(echo "$DATA" | grep -c '"login"')" -lt 100 ] && break
-            PAGE=$((PAGE + 1))
-          done
-
-          if [ "$FOUND" = "false" ]; then
-            echo "## Before you build — check if someone already did it for you :point_down:" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Browse the **[Recent Forks List](https://github.com/LongQT-sea/mkmaciso/releases/latest)** — someone may have already built the macOS version you need." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "If you still need to build your own, star [the repo](https://github.com/LongQT-sea/mkmaciso) first — that's step 1 in the [README](https://github.com/LongQT-sea/macos-iso-builder#how-to-use). :star:" >> $GITHUB_STEP_SUMMARY
-            echo "<br>![star](https://raw.githubusercontent.com/LongQT-sea/macos-iso-builder/main/.github/star.jpg)" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -80,14 +36,13 @@ jobs:
         run: |
           echo "Runner OS: $(sw_vers -productName) $(sw_vers -productVersion)"
           echo "Architecture: $(uname -m)"
-          echo ""
-          df -h $(mktemp)
-          echo ""
           echo "RAM: $(top -l 1 | grep PhysMem)"
-          echo ""
           echo "CPU: $(sysctl -n machdep.cpu.brand_string)"
 
-      - name: Create macOS image
+      - name: Make mkmaciso executable
+        run: chmod +x ./mkmaciso
+
+      - name: Build macOS image
         id: create_image
         run: |
           ./mkmaciso "${{ inputs.macos_version }}" "${{ inputs.image_format }}"
@@ -101,6 +56,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.create_image.outputs.image_name }}
+          name: macos-image
           compression-level: 0
           retention-days: 15
           archive: false
@@ -110,22 +66,11 @@ jobs:
         run: |
           if [ "${{ steps.create_image.outcome }}" == "failure" ]; then
             echo "## Download macOS failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> [!WARNING]" >> $GITHUB_STEP_SUMMARY
-            echo "> This runner may have network issues. Please **re-run the workflow** to try a different runner." >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ job.status }}" == "success" ]; then
+            echo "> This runner may have network issues. Please re-run the workflow."
+          else
+            echo "## Successfully built ${{ steps.create_image.outputs.image_name }}" >> $GITHUB_STEP_SUMMARY
             if [ "${{ inputs.image_format }}" == "iso" ]; then
-              echo "## Successfully built $(basename *.iso)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "> [!Important]" >> $GITHUB_STEP_SUMMARY
-              echo "> This ISO image is intended for creating macOS virtual machines on Proxmox VE, QEMU, VMware, and VirtualBox." >> $GITHUB_STEP_SUMMARY
+              echo "> This ISO image is intended for virtual machines (Proxmox, QEMU, VMware, VirtualBox)."
             else
-              echo "## Successfully built $(basename *.dmg.img)" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "> [!Important]" >> $GITHUB_STEP_SUMMARY
-              echo '> This DMG image is intended for flashing to USB drive using [Rufus](https://rufus.ie/en/#download) *(Windows)* or `dd` *(Linux)*.' >> $GITHUB_STEP_SUMMARY
+              echo "> This DMG image is intended for flashing to USB drives."
             fi
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> [!TIP]" >> $GITHUB_STEP_SUMMARY
-            echo "> Enable [Cloudflare WARP](https://one.one.one.one/) for faster download from GitHub artifact." >> $GITHUB_STEP_SUMMARY
-          fi
