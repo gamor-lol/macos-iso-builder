@@ -25,7 +25,7 @@ on:
 
 jobs:
   build-macos-image:
-    runs-on: macos-13-large
+    runs-on: macos-latest
     timeout-minutes: 120
 
     steps:
@@ -45,7 +45,11 @@ jobs:
       - name: Build macOS image
         id: create_image
         run: |
+          # Force fallback download (fixes Apple Silicon limitation)
+          export FORCE_FULL_INSTALL=1
+
           ./mkmaciso "${{ inputs.macos_version }}" "${{ inputs.image_format }}"
+
           if [ "${{ inputs.image_format }}" == "iso" ]; then
             echo "image_name=$(basename *.iso)" >> $GITHUB_OUTPUT
           else
@@ -65,12 +69,12 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.create_image.outcome }}" == "failure" ]; then
-            echo "## Download macOS failed" >> $GITHUB_STEP_SUMMARY
-            echo "> This runner may have network issues. Please re-run the workflow."
+            echo "## ❌ Build failed" >> $GITHUB_STEP_SUMMARY
+            echo "> Try re-running — GitHub runners sometimes fail randomly."
           else
-            echo "## Successfully built ${{ steps.create_image.outputs.image_name }}" >> $GITHUB_STEP_SUMMARY
+            echo "## ✅ Successfully built ${{ steps.create_image.outputs.image_name }}" >> $GITHUB_STEP_SUMMARY
             if [ "${{ inputs.image_format }}" == "iso" ]; then
-              echo "> This ISO image is intended for virtual machines (Proxmox, QEMU, VMware, VirtualBox)."
+              echo "> Ready for VirtualBox, QEMU, VMware." >> $GITHUB_STEP_SUMMARY
             else
-              echo "> This DMG image is intended for flashing to USB drives."
+              echo "> Ready for USB flashing." >> $GITHUB_STEP_SUMMARY
             fi
